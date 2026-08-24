@@ -1,0 +1,45 @@
+name: staging of ELT_Product_AI_API
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'main'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clean old deployment files
+        run: |
+          sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
+          ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
+          "cd /home/eltproduct-api/actiondir && find . -maxdepth 1 -mindepth 1 ! -name '.env' -exec rm -rf {} + "
+
+      - name: Clone repository
+        run: |
+          sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
+          ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
+          "cd /home/eltproduct-api/actiondir && git clone git@github.com:scriptstory-bhubesh/ELT_Product_AI_API.git"
+
+      - name: Checkout desired branch and install dependencies
+        run: |
+          sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
+          ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
+          "cd /home/eltproduct-api/actiondir/ELT_Product_AI_API && git checkout ${{ github.event.inputs.branch }} && npm install -f"
+
+
+      - name: Copy built app to production directory
+        run: |
+          sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
+          ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
+          "cd /home/eltproduct-api/actiondir/ELT_Product_AI_API && cp -r * .env  /home/eltproduct-api/api"
+
+      - name: Restart PM2 process
+        run: |
+          sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
+          ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
+          "cd /home/eltproduct-api/api && pm2 restart server && pm2 save"
