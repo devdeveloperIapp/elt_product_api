@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
-const protect = require('.../middleware/authMiddleware');
+const protect = require('../middleware/authmiddleware');
 const { processQuestion } = require('../mcp/mcpService');
 const { sanitizeUserInput } = require('../mcp/security');
 
