@@ -217,7 +217,9 @@ async function runShopifySync({ sourceId, companyId, shop, accessToken }) {
 
     console.log(`[shopify-sync] domain populated:`, summary.domain);
 
-    // -- mark source as completed (merge last_synced_at into existing JSON) --
+    // -- mark source as completed (merge last_synced_at + record counts into
+    //    existing JSON so the frontend can show a "N orders imported" summary
+    //    after the OAuth redirect, without a live progress socket) --
     const sourceRow = await Source.findByPk(sourceId);
     await Source.update(
       {
@@ -225,6 +227,8 @@ async function runShopifySync({ sourceId, companyId, shop, accessToken }) {
         connector_settings_json: {
           ...(sourceRow?.connector_settings_json || {}),
           last_synced_at: new Date().toISOString(),
+          last_sync_summary: summary.raw,
+          last_sync_error: null,
         },
       },
       { where: { id: sourceId } }
@@ -236,7 +240,17 @@ async function runShopifySync({ sourceId, companyId, shop, accessToken }) {
     summary.error = err.message;
     console.error(`[shopify-sync] source=${sourceId} — sync failed:`, err.message);
 
-    await Source.update({ status: 'failed' }, { where: { id: sourceId } }).catch(() => {});
+    const failedSourceRow = await Source.findByPk(sourceId).catch(() => null);
+    await Source.update(
+      {
+        status: 'failed',
+        connector_settings_json: {
+          ...(failedSourceRow?.connector_settings_json || {}),
+          last_sync_error: err.message,
+        },
+      },
+      { where: { id: sourceId } }
+    ).catch(() => {});
   }
 
   return summary;

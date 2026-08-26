@@ -490,6 +490,7 @@ const triggerGoogleDriveSyncInBackground = async (source, connection) => {
       buildQuickBooksSyncProgress({
         companyId, sourceId, stage, syncStatus,
         currentEntity: stage, currentIndex, totalEntities, recordsProcessed,
+        connectorLabel: 'Google Drive',
       })
     );
   };

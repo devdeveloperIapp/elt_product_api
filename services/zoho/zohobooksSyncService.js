@@ -343,7 +343,9 @@ async function runZohoBooksSync({ sourceId, companyId, accessToken, organization
 
     console.log('[zoho-sync] domain populated:', summary.domain);
 
-    // -- mark source as completed (merge last_synced_at) --
+    // -- mark source as completed (merge last_synced_at + record counts into
+    //    existing JSON so the frontend can show a "N invoices imported"
+    //    summary after the OAuth redirect, without a live progress socket) --
     const sourceRow = await Source.findByPk(sourceId);
     await Source.update(
       {
@@ -351,6 +353,8 @@ async function runZohoBooksSync({ sourceId, companyId, accessToken, organization
         connector_settings_json: {
           ...(sourceRow?.connector_settings_json || {}),
           last_synced_at: new Date().toISOString(),
+          last_sync_summary: summary.raw,
+          last_sync_error: null,
         },
       },
       { where: { id: sourceId } }
@@ -361,7 +365,18 @@ async function runZohoBooksSync({ sourceId, companyId, accessToken, organization
   } catch (err) {
     summary.error = err.message;
     console.error(`[zoho-sync] source=${sourceId} — sync failed:`, err.message);
-    await Source.update({ status: 'failed' }, { where: { id: sourceId } }).catch(() => {});
+
+    const failedSourceRow = await Source.findByPk(sourceId).catch(() => null);
+    await Source.update(
+      {
+        status: 'failed',
+        connector_settings_json: {
+          ...(failedSourceRow?.connector_settings_json || {}),
+          last_sync_error: err.message,
+        },
+      },
+      { where: { id: sourceId } }
+    ).catch(() => {});
   }
 
   return summary;

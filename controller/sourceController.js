@@ -5671,8 +5671,9 @@ exports.handleShopifyCallback = async (req, res) => {
       runShopifySync({ sourceId: source.id, companyId, shop, accessToken: access_token })
     );
 
-    // 5. Redirect to frontend success page
-    return res.redirect(`${frontendUrl}/source?shopify=success&shop=${encodeURIComponent(shop)}`);
+    // 5. Redirect to frontend success page — sourceId lets the frontend poll
+    //    sync status and show a "N orders / M customers imported" summary.
+    return res.redirect(`${frontendUrl}/reports/cash-flow?shopify=success&shop=${encodeURIComponent(shop)}&sourceId=${source.id}`);
 
   } catch (err) {
     console.error("[shopify-callback]", err.message);
@@ -5891,8 +5892,9 @@ exports.handleZohoCallback = async (req, res) => {
       })
     );
 
-    // 6. Redirect to frontend
-    return res.redirect(`${frontendUrl}/source?zoho=success`);
+    // 6. Redirect to frontend — sourceId lets the frontend poll sync status
+    //    and show a "N invoices / M contacts imported" summary.
+    return res.redirect(`${frontendUrl}/reports/cash-flow?zoho=success&sourceId=${source.id}`);
 
   } catch (err) {
     console.error("[zoho-callback]", err.message);

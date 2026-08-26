@@ -428,6 +428,7 @@ const triggerGoogleSheetsSyncInBackground = async (source, connection) => {
         companyId, sourceId, stage, syncStatus,
         currentEntity: stage,
         currentIndex, totalEntities, recordsProcessed,
+        connectorLabel: 'Google Sheets',
       })
     );
   };

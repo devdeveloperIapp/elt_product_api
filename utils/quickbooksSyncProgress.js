@@ -16,6 +16,10 @@ const buildQuickBooksSyncProgress = ({
   recordsProcessed = 0,
   errorMessage = null,
   lastSyncAt = null,
+  // Google Sheets/Drive/Excel syncs ride this same channel, so the payload
+  // has to say which connector it is — otherwise the UI banner labels every
+  // sync "QuickBooks".
+  connectorLabel = "QuickBooks",
 }) => {
   const percentage =
     totalEntities > 0
@@ -36,6 +40,7 @@ const buildQuickBooksSyncProgress = ({
     percentage,
     errorMessage,
     lastSyncAt,
+    connectorLabel,
     timestamp: new Date().toISOString(),
   };
 };

@@ -27,6 +27,7 @@ const emit = (companyId, sourceId, stage, syncStatus, currentIndex = 0, total = 
     buildQuickBooksSyncProgress({
       companyId, sourceId, stage, syncStatus,
       currentEntity: stage, currentIndex, totalEntities: total, recordsProcessed,
+      connectorLabel: 'Excel',
     })
   );
 };
