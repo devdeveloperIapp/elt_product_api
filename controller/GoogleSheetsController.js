@@ -239,36 +239,16 @@ exports.googleSheetsCallback = async (req, res) => {
 
     const sourceId = source.id;
 
-    // ── Redirect to frontend with spreadsheet list for user to pick ───────
-    // We redirect to a special picker page. The sourceId is passed so the
-    // picker can call POST /api/source/auth/google-sheets/select-sheets to
-    // save the selection, then trigger the sync.
-    // Flag each spreadsheet: selected = in current selection, synced = has
-    // warehouse data from a previous sync (so the picker can mark old ones).
-    let syncedIds = new Set();
-    try {
-      const dims = await DimSpreadsheet.findAll({
-        where: { company_id: companyId },
-        attributes: ['spreadsheet_id'],
-        raw: true,
-      });
-      syncedIds = new Set(dims.map(d => d.spreadsheet_id));
-    } catch (dimErr) {
-      console.warn('[GoogleSheets] Could not load synced spreadsheet list:', dimErr.message);
-    }
-    const selectedSet = new Set(previousSelection);
-
-    const sheetsParam = encodeURIComponent(JSON.stringify(
-      spreadsheets.map(s => ({
-        id:       s.id,
-        name:     s.name,
-        selected: selectedSet.has(s.id),
-        synced:   syncedIds.has(s.id),
-      }))
-    ));
-
+    // ── Redirect to frontend with sourceId for the picker ──────────────────
+    // We redirect to a special picker page, which calls
+    // POST /api/source/auth/google-sheets/select-sheets to save the selection
+    // and trigger the sync.
+    // Spreadsheet list is NOT embedded in the redirect URL — with many sheets
+    // the Location header can exceed nginx's proxy header buffer and the
+    // redirect itself 502s. Frontend fetches the list separately via
+    // GET /auth/google-sheets/spreadsheets/:sourceId (listGoogleSpreadsheets).
     return res.redirect(
-      `${FRONTEND_URL}/?google_sheets=select&sourceId=${sourceId}&companyId=${companyId}&sheets=${sheetsParam}`
+      `${FRONTEND_URL}/?google_sheets=select&sourceId=${sourceId}&companyId=${companyId}`
     );
   } catch (err) {
     console.error('[GoogleSheets] callback error:', err);

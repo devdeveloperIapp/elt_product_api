@@ -252,14 +252,11 @@ exports.googleDriveCallback = async (req, res) => {
       selected_folder_ids: previousSelection,
     }, { conflictFields: ['company_id'] });
 
-    // ── List the user's folders for the picker (+ file counts) ────────────
+    // ── List the user's folders (for connector_settings_json only — the
+    //    picker's folder+count list is fetched separately via
+    //    GET /auth/google-drive/folders/:sourceId, so no need to compute
+    //    file counts here) ───────────────────────────────────────────────
     const folders = await listUserFolders(auth);
-    let fileCounts = {};
-    try {
-      fileCounts = await countIngestibleFilesByFolder(auth);
-    } catch (countErr) {
-      console.warn('[GoogleDrive] file-count skipped:', countErr.message);
-    }
 
     // ── Upsert Source record ──────────────────────────────────────────────
     let source = await Source.findOne({
@@ -287,19 +284,13 @@ exports.googleDriveCallback = async (req, res) => {
     }
 
     const sourceId = source.id;
-    const selectedSet = new Set(previousSelection);
 
-    const foldersParam = encodeURIComponent(JSON.stringify(
-      folders.map(f => ({
-        id:       f.id,
-        name:     f.name,
-        selected: selectedSet.has(f.id),
-        count:    fileCounts[f.id] || 0,
-      }))
-    ));
-
+    // Folder list is NOT embedded in the redirect URL — with many folders
+    // the Location header can exceed nginx's proxy header buffer and the
+    // redirect itself 502s. Frontend fetches the list separately via
+    // GET /auth/google-drive/folders/:sourceId (listGoogleDriveFolders).
     return res.redirect(
-      `${FRONTEND_URL}/?google_drive=select&sourceId=${sourceId}&companyId=${companyId}&folders=${foldersParam}`
+      `${FRONTEND_URL}/?google_drive=select&sourceId=${sourceId}&companyId=${companyId}`
     );
   } catch (err) {
     console.error('[GoogleDrive] callback error:', err);
