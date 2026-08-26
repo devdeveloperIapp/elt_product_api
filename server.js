@@ -30,7 +30,9 @@ const allowedOrigins = [
   'http://localhost:7005',
   'https://stages-scanning-profession-brain.trycloudflare.com',
   'https://according-fluid-concluded-joke.trycloudflare.com',
-  'https://glossiest-comparingly-dann.ngrok-free.dev'
+  'https://glossiest-comparingly-dann.ngrok-free.dev',
+  'https://elt-product.scriptstory.com',
+  'https://elt-product-api.scriptstory.com'
 ];
 
 app.use(cors({
