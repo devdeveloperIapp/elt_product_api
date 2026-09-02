@@ -15,7 +15,7 @@ exports.listUsers = async (req, res) => {
 
     const users = await User.findAll({
       where,
-      attributes: { exclude: ['password', 'email_otp'] },
+      attributes: { exclude: ['password', 'email_otp', 'email_otp_expires_at'] },
       include: [{ model: Role, as: 'userRole', attributes: ['id', 'name'] }],
       order: [['id', 'DESC']],
     });
@@ -34,7 +34,7 @@ exports.getUser = async (req, res) => {
 
     const user = await User.findOne({
       where,
-      attributes: { exclude: ['password', 'email_otp'] },
+      attributes: { exclude: ['password', 'email_otp', 'email_otp_expires_at'] },
       include: [{ model: Role, as: 'userRole', attributes: ['id', 'name'] }],
     });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -66,10 +66,13 @@ exports.createUser = async (req, res) => {
       role_id: role_id || null,
       company_id: newCompanyId,
       is_active: true,
+      // Admin-provisioned accounts skip the signup OTP — the admin already
+      // vouched for the address and set the password out of band.
+      is_email_verified: true,
     });
 
     const created = await User.findByPk(user.id, {
-      attributes: { exclude: ['password', 'email_otp'] },
+      attributes: { exclude: ['password', 'email_otp', 'email_otp_expires_at'] },
       include: [{ model: Role, as: 'userRole', attributes: ['id', 'name'] }],
     });
     return res.status(201).json({ success: true, data: created, message: 'User created successfully' });
@@ -100,7 +103,7 @@ exports.updateUser = async (req, res) => {
 
     await user.update(updates);
     const updated = await User.findByPk(user.id, {
-      attributes: { exclude: ['password', 'email_otp'] },
+      attributes: { exclude: ['password', 'email_otp', 'email_otp_expires_at'] },
       include: [{ model: Role, as: 'userRole', attributes: ['id', 'name'] }],
     });
     return res.json({ success: true, data: updated, message: 'User updated successfully' });

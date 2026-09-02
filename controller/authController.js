@@ -5,11 +5,16 @@ const crypto = require('crypto');
 const { setUser, signAccessToken, generateRefreshToken, hashRefreshToken, verifyAccessToken } = require('../utils/jwt');
 const { revoke } = require('../utils/tokenBlacklist');
 const { Op } = require('sequelize');
-const { otpSender, emailSender, otpGenerator, welcomeEmailSender } = require("../utils/helperFuntions");
+const { otpSender, emailSender, otpGenerator, welcomeEmailSender, verificationEmailSender } = require("../utils/helperFuntions");
 const { Role, Company } = require("../model");
 const RefreshToken = require('../model/RefreshToken');
 const { OAuth2Client } = require('google-auth-library');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// How long a signup verification code stays valid.
+const OTP_TTL_MS = 10 * 60 * 1000;
+const otpExpiry = () => new Date(Date.now() + OTP_TTL_MS);
+
 exports.signup = async (req, res) => {
     try {
         const { error } = signupValidation.validate(req.body, { abortEarly: false });
@@ -32,6 +37,21 @@ exports.signup = async (req, res) => {
             }
         });
         if (userExist) {
+            // A signup that never got verified is not a real account yet —
+            // send a fresh code instead of dead-ending the user.
+            if (userExist.email === data.email && userExist.is_email_verified === false) {
+                const otp = otpGenerator();
+                await User.update(
+                    { email_otp: String(otp), email_otp_expires_at: otpExpiry() },
+                    { where: { id: userExist.id } }
+                );
+                await verificationEmailSender(userExist.email, userExist.display_name || userExist.user_name, otp);
+                return res.status(200).json({
+                    success: true,
+                    data: { email: userExist.email, requiresVerification: true },
+                    message: "This email is already registered but not verified. We've sent you a new verification code."
+                })
+            }
             // console.log(userExist)
             return res.status(400).json({
                 success: false,
@@ -64,16 +84,152 @@ exports.signup = async (req, res) => {
             console.warn('[signup] "Company User" role not found — run scripts/seed_company_user_role.js');
         }
 
+        // The account starts unverified — login stays blocked until the
+        // emailed OTP is confirmed via /verify-signup-otp.
+        const otp = otpGenerator();
+        data.is_email_verified = false;
+        data.email_otp = String(otp);
+        data.email_otp_expires_at = otpExpiry();
+
         const user = await User.create(data);
-        await welcomeEmailSender(data.email, data.user_name);
+        const otpSent = await verificationEmailSender(data.email, data.display_name || data.user_name, otp);
+
         return res.status(200).json({
             success: true,
-            data: null,
-            message: "You have been registered successfully."
+            data: { email: user.email, requiresVerification: true },
+            message: otpSent
+                ? "Account created. Enter the verification code we emailed you to activate it."
+                : "Account created, but we could not send the verification code. Please use \"Resend code\"."
         })
 
     } catch (error) {
         console.log("error", error)
+        return res.status(500).json({
+            success: false,
+            data: null,
+            message: "Something went wrong"
+        })
+    }
+}
+
+// POST /api/auth/verify-signup-otp   { email, otp }
+// Confirms the code emailed at signup and activates the account so the user
+// can log in. Sends the welcome email once, on first successful verification.
+exports.verifySignupOtp = async (req, res) => {
+    try {
+        const { email, otp } = req.body || {};
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "Email and verification code are required."
+            })
+        }
+
+        const user = await User.findOne({ where: { email } });
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "No account found for this email."
+            })
+        }
+        if (user.is_email_verified) {
+            return res.status(200).json({
+                success: true,
+                data: { email: user.email, verified: true },
+                message: "Your email is already verified. Please log in."
+            })
+        }
+        if (!user.email_otp || String(user.email_otp) !== String(otp).trim()) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "Invalid verification code."
+            })
+        }
+        if (user.email_otp_expires_at && new Date(user.email_otp_expires_at) < new Date()) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "This verification code has expired. Please request a new one."
+            })
+        }
+
+        await User.update(
+            { is_email_verified: true, email_otp: null, email_otp_expires_at: null },
+            { where: { id: user.id } }
+        );
+        welcomeEmailSender(user.email, user.display_name || user.user_name).catch(() => {});
+
+        return res.status(200).json({
+            success: true,
+            data: { email: user.email, verified: true },
+            message: "Email verified successfully. You can now log in."
+        })
+    } catch (error) {
+        console.log("verifySignupOtp error:", error);
+        return res.status(500).json({
+            success: false,
+            data: null,
+            message: "Something went wrong"
+        })
+    }
+}
+
+// POST /api/auth/resend-signup-otp   { email }
+// Issues a fresh signup verification code.
+exports.resendSignupOtp = async (req, res) => {
+    try {
+        const { email } = req.body || {};
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "Email is required."
+            })
+        }
+
+        const user = await User.findOne({ where: { email } });
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "No account found for this email."
+            })
+        }
+        if (user.is_email_verified) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "This email is already verified. Please log in."
+            })
+        }
+
+        const otp = otpGenerator();
+        if (!otp) {
+            throw new Error("Otp not generated");
+        }
+        await User.update(
+            { email_otp: String(otp), email_otp_expires_at: otpExpiry() },
+            { where: { id: user.id } }
+        );
+        const sent = await verificationEmailSender(user.email, user.display_name || user.user_name, otp);
+        if (!sent) {
+            return res.status(500).json({
+                success: false,
+                data: null,
+                message: "We could not send the verification email. Please try again."
+            })
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: { email: user.email, requiresVerification: true },
+            message: "A new verification code has been sent to your email."
+        })
+    } catch (error) {
+        console.log("resendSignupOtp error:", error);
         return res.status(500).json({
             success: false,
             data: null,
@@ -176,6 +332,16 @@ exports.login = async (req, res) => {
                 success: false,
                 data: null,
                 message: "Invalid email/username or password. Please try again."
+            });
+        }
+
+        // Email must be verified before the first login. Only an explicit
+        // `false` blocks — legacy rows predating this column stay usable.
+        if (user.is_email_verified === false) {
+            return res.status(403).json({
+                success: false,
+                data: { email: user.email, requiresVerification: true },
+                message: "Please verify your email address to continue. Enter the code we sent you."
             });
         }
 
@@ -295,6 +461,7 @@ exports.googleLogin = async (req, res) => {
                 password: randomPw,
                 company_id: company.id,
                 role_id: defaultRole ? defaultRole.id : null,
+                is_email_verified: true,   // Google already verified this address
             });
 
             user = await User.findOne({
@@ -307,6 +474,16 @@ exports.googleLogin = async (req, res) => {
 
         if (user.is_active === false) {
             return res.status(403).json({ success: false, data: null, message: 'Account disabled.' });
+        }
+
+        // Signing in through Google proves ownership of the address, so an
+        // account still waiting on its signup OTP is verified here.
+        if (user.is_email_verified === false) {
+            await User.update(
+                { is_email_verified: true, email_otp: null, email_otp_expires_at: null },
+                { where: { id: user.id } }
+            );
+            user.is_email_verified = true;
         }
 
         // 4. Issue our tokens (same as /signin)
@@ -373,12 +550,13 @@ exports.forgetPassword = async (req, res) => {
         if (!otp) {
             throw new Error("Otp not generated ");
         }
-        const emailSent = await emailSender(email, user.display_name, otp);
+        // display_name is optional at signup, so fall back to the username.
+        const emailSent = await emailSender(email, user.display_name || user.user_name, otp);
         if (!emailSent) {
             throw new Error("Email not sent");
         }
         await User.update(
-            { email_otp: otp },
+            { email_otp: String(otp), email_otp_expires_at: otpExpiry() },
             { where: { email } }
         );
         return res.status(200).json({
@@ -407,7 +585,7 @@ exports.otpValidator = async (req, res) => {
             })
         }
         const user = await User.findOne({
-            where: { email, email_otp: otp }
+            where: { email, email_otp: String(otp).trim() }
         })
         if (!user) {
             return res.status(400).json({
@@ -416,9 +594,16 @@ exports.otpValidator = async (req, res) => {
                 message: "invalid otp"
             })
         }
+        if (user.email_otp_expires_at && new Date(user.email_otp_expires_at) < new Date()) {
+            return res.status(400).json({
+                success: false,
+                data: null,
+                message: "This code has expired. Please request a new one."
+            })
+        }
         const token = setUser(user);
         await User.update(
-            { email_otp: null },
+            { email_otp: null, email_otp_expires_at: null },
             { where: { email } }
         )
         return res.status(200).json({
@@ -571,7 +756,7 @@ exports.me = async (req, res) => {
     try {
         const user = await User.findOne({
             where: { id: req.auth.userId },
-            attributes: { exclude: ['password', 'email_otp'] },
+            attributes: { exclude: ['password', 'email_otp', 'email_otp_expires_at'] },
             include: [{ model: Role, as: 'userRole', attributes: ['id', 'name', 'description', 'isSuperAdmin'] }],
         });
         if (!user) return res.status(404).json({ success: false, data: null, message: 'User not found' });

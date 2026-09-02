@@ -30,31 +30,38 @@ exports.promisePool = async (items, poolLimit, fn) => {
 
 exports.otpGenerator = () => {
     try {
+        // Never log the code — it would let anyone with log access take over
+        // an account through the reset/verification flow.
         const randomSixDigit = Math.floor(100000 + Math.random() * 900000);
-        console.log(randomSixDigit);
         return randomSixDigit;
     } catch (error) {
         return null;
     }
 }
 
+// One transport for every mail we send. Gmail shows app passwords in
+// space-separated groups, so strip whitespace before authenticating.
+const mailTransport = () => nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 465,
+    secure: true, // true for 465, false for other ports
+    auth: {
+        user: (process.env.SMTP_USER || '').trim(),
+        pass: (process.env.SMTP_PASS || '').replace(/\s/g, ''),
+    },
+});
+
 exports.emailSender = async (email, display_name, OTP_CODE) => {
     try {
-        const transporter = await nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: process.env.SMTP_PORT,
-            secure: true, // true for 465, false for other ports
-            auth: {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
-            },
-        });
+        const transporter = mailTransport();
+        // Callers may have no name on file — never greet someone as "null".
+        const name = display_name || (email || '').split('@')[0] || 'there';
         // Wrap in an async IIFE so we can use await.
         const info = await transporter.sendMail({
-            from: 'ELT',
+            from: `"ScriptStory Elt" <${process.env.SMTP_USER}>`,
             to: email,
-            subject: "Forget Password",
-            text: `Dear [${display_name}],
+            subject: "Forgot Password",
+            text: `Dear ${name},
 
 We received a request to reset your password for your Elt account.
 
@@ -82,6 +89,33 @@ Elt Team
 }
 
 
+// Signup e-mail verification code. Sent right after the account row is
+// created — the user cannot log in until this code is confirmed.
+exports.verificationEmailSender = async (email, display_name, OTP_CODE) => {
+    try {
+        const transporter = mailTransport();
+        const name = display_name || (email || '').split('@')[0] || 'there';
+        const info = await transporter.sendMail({
+            from: `"ScriptStory Elt" <${process.env.SMTP_USER}>`,
+            to: email,
+            subject: "Verify your email address",
+            html: `
+      <h2>Hi ${name} 👋</h2>
+      <p>Thanks for signing up for the ELT platform. Please confirm your email address to activate your account.</p>
+      <p style="font-size:20px;letter-spacing:4px;"><strong>🔐 ${OTP_CODE}</strong></p>
+      <p>This code expires in 10 minutes.</p>
+      <p>If you did not create this account, you can safely ignore this email.</p>
+    `
+        });
+
+        console.log("Message sent:", info.messageId);
+        return true;
+    } catch (error) {
+        console.log("smtp error: ", error)
+        return false;
+    }
+}
+
 exports.getAccessTokenFromDatabase = async () => {
     const data = await AirbyteAccessToken.findAll();
     if (data?.length > 0) {
@@ -93,22 +127,15 @@ exports.getAccessTokenFromDatabase = async () => {
 
 exports.welcomeEmailSender = async (email, user_name) => {
     try {
-        const transporter = await nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: process.env.SMTP_PORT,
-            secure: true, // true for 465, false for other ports
-            auth: {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
-            },
-        });
+        const transporter = mailTransport();
+        const name = user_name || (email || '').split('@')[0] || 'there';
         // Wrap in an async IIFE so we can use await.
         const info = await transporter.sendMail({
-            from: `<${process.env.SMTP_USER}>`,
+            from: `"ScriptStory Elt" <${process.env.SMTP_USER}>`,
             to: email,
             subject: "Welcome to Our Platform!",
             html: `
-      <h2>Welcome, ${user_name} 👋</h2>
+      <h2>Welcome, ${name} 👋</h2>
       <p>Thanks for signing up for our ELT platform!</p>
       <p>We're excited to have you onboard.</p>
     `

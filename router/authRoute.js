@@ -5,6 +5,8 @@ const userControl = require('../controller/userController');
 const protect = require('../middleware/authmiddleware');
 
 route.post("/signup", authControl.signup);
+route.post("/verify-signup-otp", authControl.verifySignupOtp);   // activate a new account
+route.post("/resend-signup-otp", authControl.resendSignupOtp);
 route.post("/signin", authControl.login);
 route.post("/google", authControl.googleLogin);   // Sign in with Google
 route.post("/forget-password", authControl.forgetPassword);

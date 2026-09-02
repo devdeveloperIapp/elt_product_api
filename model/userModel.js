@@ -52,6 +52,24 @@ const User = mainDB.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
+  // Email verification / password-reset OTP. Set on signup and on
+  // forget-password, cleared once the code has been used.
+  email_otp: {
+    type: DataTypes.STRING(10),
+    allowNull: true,
+    defaultValue: null
+  },
+  email_otp_expires_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null
+  },
+  // false until the signup OTP is verified — login is blocked while false.
+  is_email_verified: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
   last_login: {
     type: DataTypes.DATE
   },
