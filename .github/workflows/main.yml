@@ -23,20 +23,20 @@ jobs:
         run: |
           sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
           ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
-          "cd /home/eltproduct-api/actiondir && git clone git@github.com:scriptstory-bhubesh/ELT_Product_AI_API.git"
+          "cd /home/eltproduct-api/actiondir && git clone git@github.com:devdeveloperIapp/elt_product_api.git"
 
       - name: Checkout desired branch and install dependencies
         run: |
           sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
           ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
-          "cd /home/eltproduct-api/actiondir/ELT_Product_AI_API && git checkout ${{ github.event.inputs.branch }} && npm ci"
+          "cd /home/eltproduct-api/actiondir/elt_product_api && git checkout ${{ github.event.inputs.branch }} && npm ci"
 
 
       - name: Copy built app to production directory
         run: |
           sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
           ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
-          "cd /home/eltproduct-api/actiondir/ELT_Product_AI_API && cp -r * .env  /home/eltproduct-api/api"
+          "cd /home/eltproduct-api/actiondir/elt_product_api && cp -r * .env  /home/eltproduct-api/api"
 
       - name: Restart PM2 process
         run: |
