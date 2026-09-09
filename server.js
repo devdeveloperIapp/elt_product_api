@@ -23,16 +23,23 @@ mainDB.authenticate()
   .then(() => console.log("database connected"))
   .catch((error) => console.log("Something went wrong\n", error));
 
+// Quick-tunnel hostnames (trycloudflare.com, ngrok-free.dev) are handed out at
+// random and released when the tunnel closes, so anyone who later gets the same
+// name would inherit a credentialed cross-origin grant. Add tunnels through
+// CORS_EXTRA_ORIGINS in the local .env instead of committing them here.
+const extraOrigins = (process.env.CORS_EXTRA_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
   'http://154.53.63.157:7005',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:7005',
-  'https://stages-scanning-profession-brain.trycloudflare.com',
-  'https://according-fluid-concluded-joke.trycloudflare.com',
-  'https://glossiest-comparingly-dann.ngrok-free.dev',
   'https://elt-product.scriptstory.com',
-  'https://elt-product-api.scriptstory.com'
+  'https://elt-product-api.scriptstory.com',
+  ...extraOrigins
 ];
 
 app.use(cors({
