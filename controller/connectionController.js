@@ -15,6 +15,7 @@ const Source = require("../model/sourceModel");
 const Destination = require("../model/destinationModel");
 const ConnectionSyncRun = require("../model/ConnectionSyncRun");
 const { tenantId, withTenantScope, stampTenant, sendAuthError } = require("../utils/tenantScope");
+const { quoteIdent } = require("../utils/sqlIdentifier");
 const {
   getEntityMapForETL,
   isValidQuickBooksEntity,
@@ -1191,8 +1192,8 @@ async function readPostgresData(
 
     while (hasMoreData) {
       const query = `
-        SELECT ${activeColumns.map((col) => `"${col}"`).join(", ")} 
-        FROM "${tableName}" 
+        SELECT ${activeColumns.map((col) => quoteIdent(col)).join(", ")} 
+        FROM ${quoteIdent(tableName)} 
         ORDER BY 1
         LIMIT ${chunkSize} OFFSET ${offset}
       `;
@@ -2241,8 +2242,8 @@ async function ensureQuickBooksTableFromSchema(
         `🔑 Adding primary key constraint: ${primaryKeys.join(", ")}`
       );
       await sequelize.query(
-        `ALTER TABLE "${tableName}" ADD PRIMARY KEY (${primaryKeys
-          .map((pk) => `"${pk}"`)
+        `ALTER TABLE ${quoteIdent(tableName)} ADD PRIMARY KEY (${primaryKeys
+          .map((pk) => quoteIdent(pk))
           .join(", ")});`
       );
     }
@@ -2378,8 +2379,8 @@ async function ensureTableFromSchema(sequelize, tableName, schemaDetails) {
         `🔑 Adding primary key constraint: ${primaryKeys.join(", ")}`
       );
       await sequelize.query(
-        `ALTER TABLE "${tableName}" ADD PRIMARY KEY (${primaryKeys
-          .map((pk) => `"${pk}"`)
+        `ALTER TABLE ${quoteIdent(tableName)} ADD PRIMARY KEY (${primaryKeys
+          .map((pk) => quoteIdent(pk))
           .join(", ")});`
       );
     }
@@ -3347,7 +3348,7 @@ async function bulkUpsertChunk(
   primaryKeyColumns,
   transaction
 ) {
-  const columns = activeColumns.map((col) => `"${col}"`).join(", ");
+  const columns = activeColumns.map((col) => quoteIdent(col)).join(", ");
   const valuePlaceholders = [];
   const allValues = [];
 
@@ -3372,13 +3373,13 @@ async function bulkUpsertChunk(
     (col) => !primaryKeyColumns.includes(col)
   );
   const updateSet = updateColumns
-    .map((col) => `"${col}" = EXCLUDED."${col}"`)
+    .map((col) => `${quoteIdent(col)} = EXCLUDED.${quoteIdent(col)}`)
     .join(", ");
 
   const sql = `
-    INSERT INTO "${tableName}" (${columns})
+    INSERT INTO ${quoteIdent(tableName)} (${columns})
     VALUES ${valuePlaceholders.join(", ")}
-    ON CONFLICT (${primaryKeyColumns.map((pk) => `"${pk}"`).join(", ")})
+    ON CONFLICT (${primaryKeyColumns.map((pk) => quoteIdent(pk)).join(", ")})
     DO UPDATE SET ${updateSet}
   `;
 
@@ -3468,7 +3469,7 @@ async function overwrite(
 
   try {
     // Truncate table
-    await sequelize.query(`TRUNCATE TABLE "${tableName}"`, { transaction });
+    await sequelize.query(`TRUNCATE TABLE ${quoteIdent(tableName)}`, { transaction });
     console.log(`✅ Table ${tableName} truncated successfully`);
   } catch (error) {
     console.log(`⚠️ Could not truncate table ${tableName}:`, error.message);
@@ -3524,8 +3525,8 @@ async function bulkInsert(
         .map(() => `(${activeColumns.map(() => "?").join(", ")})`)
         .join(", ");
 
-      const sql = `INSERT INTO "${tableName}" (${activeColumns
-        .map((col) => `"${col}"`)
+      const sql = `INSERT INTO ${quoteIdent(tableName)} (${activeColumns
+        .map((col) => quoteIdent(col))
         .join(", ")}) VALUES ${placeholders}`;
 
       const values = chunk.flatMap((row) =>
@@ -4334,7 +4335,7 @@ async function overwriteDedup(
     return;
   }
 
-  await sequelize.query(`TRUNCATE TABLE "${tableName}";`);
+  await sequelize.query(`TRUNCATE TABLE ${quoteIdent(tableName)};`);
 
   // Use upsertData for deduplication during insert
   await upsertData(sequelize, tableName, activeColumns, rows, pkCols);
@@ -4509,12 +4510,12 @@ async function incrementalAppendDedup(
     const row = rows[i];
     const cols = activeColumns;
     const vals = cols.map((c) => row[c] ?? null);
-    const updateSet = cols.map((c) => `"${c}" = EXCLUDED."${c}"`).join(", ");
+    const updateSet = cols.map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`).join(", ");
 
     const sql = `
-      INSERT INTO "${tableName}" (${cols.map((col) => `"${col}"`).join(", ")})
+      INSERT INTO ${quoteIdent(tableName)} (${cols.map((col) => quoteIdent(col)).join(", ")})
       VALUES (${cols.map(() => "?").join(", ")})
-      ON CONFLICT (${pkCols.map((pk) => `"${pk}"`).join(", ")})
+      ON CONFLICT (${pkCols.map((pk) => quoteIdent(pk)).join(", ")})
       DO UPDATE SET ${updateSet};
     `;
 
@@ -4581,12 +4582,12 @@ async function simpleBulkInsert(
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
 
-    const columns = activeColumns.map((col) => `"${col}"`).join(", ");
+    const columns = activeColumns.map((col) => quoteIdent(col)).join(", ");
     const placeholders = chunk
       .map(() => `(${activeColumns.map(() => "?").join(", ")})`)
       .join(", ");
 
-    const sql = `INSERT INTO "${tableName}" (${columns}) VALUES ${placeholders}`;
+    const sql = `INSERT INTO ${quoteIdent(tableName)} (${columns}) VALUES ${placeholders}`;
 
     const values = chunk.flatMap((row) =>
       activeColumns.map((col) => {
@@ -4618,7 +4619,7 @@ async function simpleBulkInsert(
 async function overwrite(sequelize, tableName, activeColumns, rows) {
   console.log(`🗑️ Truncating table ${tableName} for full refresh overwrite`);
   try {
-    await sequelize.query(`TRUNCATE TABLE "${tableName}";`);
+    await sequelize.query(`TRUNCATE TABLE ${quoteIdent(tableName)};`);
     console.log(`✅ Table ${tableName} truncated successfully`);
   } catch (error) {
     console.log(`⚠️ Could not truncate table ${tableName}:`, error.message);
@@ -4677,7 +4678,7 @@ async function overwriteDedup(
     );
   }
 
-  await sequelize.query(`TRUNCATE TABLE "${tableName}";`);
+  await sequelize.query(`TRUNCATE TABLE ${quoteIdent(tableName)};`);
 
   // Use upsertData for deduplication during insert
   await upsertData(sequelize, tableName, activeColumns, rows, pkCols);
@@ -4701,12 +4702,14 @@ async function incrementalAppendDedup(
   for (const row of rows) {
     const cols = activeColumns;
     const vals = cols.map((c) => row[c] ?? null);
-    const updateSet = cols.map((c) => `"${c}" = EXCLUDED."${c}"`).join(", ");
+    const updateSet = cols
+      .map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`)
+      .join(", ");
 
     const sql = `
-      INSERT INTO ${tableName} (${cols.join(", ")})
+      INSERT INTO ${quoteIdent(tableName)} (${cols.map(quoteIdent).join(", ")})
       VALUES (${cols.map(() => "?").join(", ")})
-      ON CONFLICT (${pkCols.join(", ")}) DO UPDATE SET ${updateSet};
+      ON CONFLICT (${pkCols.map(quoteIdent).join(", ")}) DO UPDATE SET ${updateSet};
     `;
 
     await sequelize.query(sql, { replacements: vals });
@@ -8637,14 +8640,14 @@ async function ensureZohoBooksTableFromSchema(
     if (primaryKeys.length === 1) {
       console.log(`🔑 Adding primary key constraint: ${primaryKeys[0]}`);
       await sequelize.query(
-        `ALTER TABLE "${tableName}" ADD PRIMARY KEY ("${primaryKeys[0]}");`
+        `ALTER TABLE ${quoteIdent(tableName)} ADD PRIMARY KEY (${quoteIdent(primaryKeys[0])});`
       );
     } else if (primaryKeys.length > 1) {
       console.warn(
         `⚠️ Multiple primary keys detected (${primaryKeys.length}). Using first one: ${primaryKeys[0]}`
       );
       await sequelize.query(
-        `ALTER TABLE "${tableName}" ADD PRIMARY KEY ("${primaryKeys[0]}");`
+        `ALTER TABLE ${quoteIdent(tableName)} ADD PRIMARY KEY (${quoteIdent(primaryKeys[0])});`
       );
     } else {
       console.log(`ℹ️ No primary key defined for table ${tableName}`);
