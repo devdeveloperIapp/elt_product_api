@@ -29,7 +29,7 @@ jobs:
         run: |
           sshpass -p "${{ secrets.EC2_PASSWORD_STG }}" ssh -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT_STG }} \
           ${{ secrets.EC2_USERNAME_STG }}@${{ secrets.EC2_HOST_STG }} \
-          "cd /home/eltproduct-api/actiondir/ELT_Product_AI_API && git checkout ${{ github.event.inputs.branch }} && npm install -f"
+          "cd /home/eltproduct-api/actiondir/ELT_Product_AI_API && git checkout ${{ github.event.inputs.branch }} && npm ci"
 
 
       - name: Copy built app to production directory
