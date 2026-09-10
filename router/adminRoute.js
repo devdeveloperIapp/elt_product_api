@@ -17,6 +17,8 @@ route.get   ('/users/:id',    protect, isAdmin,          userCtrl.getUser);
 route.post  ('/users',        protect, isAdmin,          userCtrl.createUser);
 route.put   ('/users/:id',    protect, isAdmin,          userCtrl.updateUser);
 route.delete('/users/:id',    protect, isAdmin,          userCtrl.deactivateUser);
+// Hard delete — removes the user and their dependent rows. Super admin only.
+route.delete('/users/:id/permanent', protect, requireSuperAdmin, userCtrl.deleteUser);
 
 // ── Per-user navigation access (super admin) ──────────────────────────────────
 route.get('/users/:id/navigation-access', protect, requireSuperAdmin, navCtrl.getUserNavigationAccess);

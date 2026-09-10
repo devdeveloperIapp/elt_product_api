@@ -5,7 +5,16 @@
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 const User = require('../model/userModel');
-const { Role } = require('../model');
+const {
+  Role,
+  RefreshToken,
+  UserQbCompany,
+  UserNavigationOverride,
+  ChartConfig,
+  DashboardConfig,
+} = require('../model');
+const SyncSchedule = require('../model/SyncSchedule');
+const { mainDB } = require('../connection/dbConnection');
 
 // GET /api/admin/users
 exports.listUsers = async (req, res) => {
@@ -156,6 +165,59 @@ exports.deactivateUser = async (req, res) => {
     await user.update({ is_active: false });
     return res.json({ success: true, message: 'User deactivated' });
   } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /api/admin/users/:id/permanent  (hard delete — super admin only)
+// Removes the user row and every record that hangs off it. Irreversible.
+exports.deleteUser = async (req, res) => {
+  const t = await mainDB.transaction();
+  try {
+    const { userId } = req.auth;
+    const targetId = Number(req.params.id);
+
+    if (!Number.isInteger(targetId)) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Invalid user id' });
+    }
+    if (targetId === userId) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
+    }
+
+    const user = await User.findOne({
+      where: { id: targetId },
+      include: [{ model: Role, as: 'userRole', attributes: ['id', 'name', 'isSuperAdmin'] }],
+      transaction: t,
+    });
+    if (!user) {
+      await t.rollback();
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    // A super admin must not be deletable through the panel — demote first.
+    if (user.userRole?.isSuperAdmin) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Cannot delete a super admin account. Change their role first.' });
+    }
+
+    const label = user.email || user.user_name || `#${targetId}`;
+
+    // Dependants first — some tables carry no ON DELETE CASCADE.
+    await RefreshToken.destroy({ where: { user_id: targetId }, transaction: t });
+    await UserQbCompany.destroy({ where: { user_id: targetId }, transaction: t });
+    await UserNavigationOverride.destroy({ where: { user_id: targetId }, transaction: t });
+    await ChartConfig.destroy({ where: { user_id: targetId }, transaction: t });
+    await DashboardConfig.destroy({ where: { user_id: targetId }, transaction: t });
+    // Keep the schedules, just drop the authorship pointer.
+    await SyncSchedule.update({ created_by: null }, { where: { created_by: targetId }, transaction: t });
+
+    await user.destroy({ transaction: t });
+    await t.commit();
+
+    return res.json({ success: true, message: `User ${label} permanently deleted` });
+  } catch (err) {
+    await t.rollback();
     return res.status(500).json({ success: false, message: err.message });
   }
 };
